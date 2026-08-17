@@ -1,0 +1,25 @@
+# Secrets / local state
+.env
+*.pem
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Virtualenvs
+venv/
+.venv/
+env/
+
+# VCS / editors / OS
+.git/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
