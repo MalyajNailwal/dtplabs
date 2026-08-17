@@ -1,0 +1,32 @@
+# Environment / secrets
+.env
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.Python
+build/
+dist/
+
+# Virtualenvs
+venv/
+.venv/
+env/
+
+# Django
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+*.log
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
