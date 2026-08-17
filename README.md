@@ -11,9 +11,10 @@ A Django REST API that accepts documents (PDF, DOCX, TXT), extracts text, sends 
 - **Structured Response**: Returns title, summary, keywords, language, and word count
 - **Async Processing**: Celery background tasks, with automatic synchronous fallback if Redis is unavailable
 - **Retry Logic**: Celery task retries (3 attempts, 10s backoff) plus request timeouts on LLM calls
-- **Configurable**: Model, timeout, token limit and upload cap all driven by env vars
+- **Configurable Prompt Templates**: Prompts live in `documents/prompts.py`, separate from the API client; model, temperature, timeout, token limit, prompt budget and upload cap are all env vars
+- **Logging Middleware**: Structured per-request logging with duration, status, a request id echoed as `X-Request-ID`, and masking of sensitive query params
 - **Docker Support**: Dockerfile + docker-compose (web, redis, celery)
-- **Unit Tests**: Comprehensive test coverage (14 tests covering models, APIs, extraction, LLM utils, demo page)
+- **Unit Tests**: Comprehensive test coverage (22 tests covering models, APIs, extraction, LLM utils, prompts, logging middleware, demo page)
 
 ## Project Structure
 
@@ -32,6 +33,8 @@ dtplabs/
 │   ├── tasks.py
 │   ├── utils.py
 │   ├── llm_utils.py
+│   ├── prompts.py           # Prompt templates
+│   ├── middleware.py        # Request logging
 │   ├── exceptions.py
 │   ├── tests.py
 │   └── templates/
@@ -112,6 +115,9 @@ python manage.py runserver
 | `LLM_REQUEST_TIMEOUT` | LLM HTTP timeout (seconds) | `60` |
 | `LLM_MAX_TOKENS` | Max tokens in the LLM response | `2000` |
 | `LLM_REASONING_EFFORT` | Reasoning budget for reasoning models (`low`/`medium`/`high`) | `low` |
+| `LLM_TEMPERATURE` | Sampling temperature | `0.3` |
+| `PROMPT_MAX_CHARS` | Document characters sent to the model | `8000` |
+| `LOG_LEVEL` | Application/request log level | `INFO` |
 | `MAX_UPLOAD_SIZE` | Max upload size (bytes) | `10485760` (10MB) |
 | `CELERY_BROKER_URL` | Redis broker URL | `redis://localhost:6379/0` |
 | `CELERY_RESULT_BACKEND` | Redis result backend | `redis://localhost:6379/0` |
@@ -267,6 +273,26 @@ data = {"model": "openai/gpt-oss-20b:free"}
 response = requests.post(url, files=files, data=data)
 print(response.json())
 ```
+
+## Logging
+
+`documents.middleware.RequestLoggingMiddleware` logs one line per request:
+
+```
+INFO 2026-01-01 12:00:00,000 middleware request_id=1d16ad35 method=POST path=/api/documents/upload/ status=201 duration_ms=10937.7 query={}
+```
+
+- `request_id` is also returned as the `X-Request-ID` response header, so a
+  client-reported failure can be traced to its log line.
+- 5xx logs at ERROR, 4xx at WARNING, everything else at INFO.
+- Unhandled exceptions are logged with a traceback before the DRF exception
+  handler formats the response.
+- Sensitive query params (`password`, `token`, `secret`, `api_key`,
+  `authorization`) are masked as `***`.
+
+Verbosity is controlled by `LOG_LEVEL`. Application events (extraction, LLM
+calls, task failures) log under the `documents` logger; request lines under
+`documents.requests`.
 
 ## Postman Collection
 
