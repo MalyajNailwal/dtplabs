@@ -1,0 +1,266 @@
+{
+  "info": {
+    "name": "Document Summarizer API",
+    "description": "Django REST API that accepts a document (PDF/DOCX/TXT), extracts its text, sends it to an LLM via OpenRouter, and returns a structured summary.\n\nSet the `base_url` collection variable (default `http://localhost:8000`). After running **Upload Document**, the returned `document_id` is saved automatically into the `document_id` variable, so the detail/status requests work with no manual copy-paste.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "document_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "model",
+      "value": "openai/gpt-oss-20b:free",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. List Free Models",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Accept", "value": "application/json" }],
+        "url": {
+          "raw": "{{base_url}}/api/models/free/",
+          "host": ["{{base_url}}"],
+          "path": ["api", "models", "free", ""]
+        },
+        "description": "Fetches the models currently available for free on OpenRouter. Returns `503` with an error message if OpenRouter is unreachable."
+      },
+      "response": [
+        {
+          "name": "200 OK",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/models/free/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "models", "free", ""]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [{ "key": "Content-Type", "value": "application/json" }],
+          "body": "{\n  \"free_models\": [\n    {\n      \"id\": \"openai/gpt-oss-20b:free\",\n      \"name\": \"OpenAI: gpt-oss-20b\"\n    },\n    {\n      \"id\": \"nvidia/nemotron-nano-9b-v2:free\",\n      \"name\": \"NVIDIA: Nemotron Nano 9B V2\"\n    }\n  ],\n  \"count\": 2\n}"
+        }
+      ]
+    },
+    {
+      "name": "2. Upload Document",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 201', function () {",
+              "    pm.response.to.have.status(201);",
+              "});",
+              "",
+              "var body = pm.response.json();",
+              "if (body.document_id) {",
+              "    pm.collectionVariables.set('document_id', body.document_id);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Accept", "value": "application/json" }],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": [],
+              "description": "Required. A .pdf, .docx or .txt file, max 10MB."
+            },
+            {
+              "key": "model",
+              "value": "{{model}}",
+              "type": "text",
+              "description": "Optional. OpenRouter model id. Defaults to DEFAULT_LLM_MODEL from settings."
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{base_url}}/api/documents/upload/",
+          "host": ["{{base_url}}"],
+          "path": ["api", "documents", "upload", ""]
+        },
+        "description": "Uploads a document and kicks off processing. If Redis is reachable the work runs in a Celery task; otherwise it falls back to synchronous processing so the endpoint still works locally.\n\nSelect a file for the `file` form-data key before sending."
+      },
+      "response": [
+        {
+          "name": "201 Created",
+          "originalRequest": {
+            "method": "POST",
+            "header": [],
+            "body": { "mode": "formdata", "formdata": [] },
+            "url": {
+              "raw": "{{base_url}}/api/documents/upload/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "documents", "upload", ""]
+            }
+          },
+          "status": "Created",
+          "code": 201,
+          "header": [{ "key": "Content-Type", "value": "application/json" }],
+          "body": "{\n  \"message\": \"Document uploaded successfully. Processing started.\",\n  \"document_id\": \"3f1c2e8a-5b4d-4a7e-9c11-8d2f6b0a9e34\",\n  \"status\": \"pending\"\n}"
+        },
+        {
+          "name": "400 Invalid File Type",
+          "originalRequest": {
+            "method": "POST",
+            "header": [],
+            "body": { "mode": "formdata", "formdata": [] },
+            "url": {
+              "raw": "{{base_url}}/api/documents/upload/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "documents", "upload", ""]
+            }
+          },
+          "status": "Bad Request",
+          "code": 400,
+          "header": [{ "key": "Content-Type", "value": "application/json" }],
+          "body": "{\n  \"error\": true,\n  \"status_code\": 400,\n  \"message\": \"Validation error\",\n  \"details\": {\n    \"file\": [\n      \"File type not allowed. Allowed types: .pdf, .docx, .txt\"\n    ]\n  }\n}"
+        }
+      ]
+    },
+    {
+      "name": "3. List Documents",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Accept", "value": "application/json" }],
+        "url": {
+          "raw": "{{base_url}}/api/documents/",
+          "host": ["{{base_url}}"],
+          "path": ["api", "documents", ""]
+        },
+        "description": "Paginated list of processed documents (20 per page, newest first). Add `?page=2` for further pages."
+      },
+      "response": [
+        {
+          "name": "200 OK",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/documents/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "documents", ""]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [{ "key": "Content-Type", "value": "application/json" }],
+          "body": "{\n  \"count\": 1,\n  \"next\": null,\n  \"previous\": null,\n  \"results\": [\n    {\n      \"id\": \"3f1c2e8a-5b4d-4a7e-9c11-8d2f6b0a9e34\",\n      \"filename\": \"document.pdf\",\n      \"file_type\": \"pdf\",\n      \"file_size\": 1024,\n      \"model_used\": \"openai/gpt-oss-20b:free\",\n      \"status\": \"completed\",\n      \"created_at\": \"2026-01-01T00:00:00Z\",\n      \"updated_at\": \"2026-01-01T00:00:03Z\"\n    }\n  ]\n}"
+        }
+      ]
+    },
+    {
+      "name": "4. Get Document Detail",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Accept", "value": "application/json" }],
+        "url": {
+          "raw": "{{base_url}}/api/documents/{{document_id}}/",
+          "host": ["{{base_url}}"],
+          "path": ["api", "documents", "{{document_id}}", ""]
+        },
+        "description": "Full detail for one document: metadata, extracted text, and the nested LLM response (title, summary, keywords, language, word count, processing time)."
+      },
+      "response": [
+        {
+          "name": "200 OK",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/documents/{{document_id}}/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "documents", "{{document_id}}", ""]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [{ "key": "Content-Type", "value": "application/json" }],
+          "body": "{\n  \"id\": \"3f1c2e8a-5b4d-4a7e-9c11-8d2f6b0a9e34\",\n  \"filename\": \"document.pdf\",\n  \"file_type\": \"pdf\",\n  \"file_size\": 1024,\n  \"extracted_text\": \"Document content...\",\n  \"model_used\": \"openai/gpt-oss-20b:free\",\n  \"status\": \"completed\",\n  \"error_message\": null,\n  \"created_at\": \"2026-01-01T00:00:00Z\",\n  \"updated_at\": \"2026-01-01T00:00:03Z\",\n  \"llm_response\": {\n    \"id\": 1,\n    \"title\": \"Document Title\",\n    \"summary\": \"Document summary...\",\n    \"keywords\": [\"keyword1\", \"keyword2\"],\n    \"language\": \"English\",\n    \"word_count\": 500,\n    \"processing_time\": 2.5,\n    \"created_at\": \"2026-01-01T00:00:03Z\"\n  }\n}"
+        },
+        {
+          "name": "404 Not Found",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/documents/00000000-0000-0000-0000-000000000000/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "documents", "00000000-0000-0000-0000-000000000000", ""]
+            }
+          },
+          "status": "Not Found",
+          "code": 404,
+          "header": [{ "key": "Content-Type", "value": "application/json" }],
+          "body": "{\n  \"error\": true,\n  \"status_code\": 404,\n  \"message\": \"No Document matches the given query.\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "5. Check Document Status",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Accept", "value": "application/json" }],
+        "url": {
+          "raw": "{{base_url}}/api/documents/{{document_id}}/status/",
+          "host": ["{{base_url}}"],
+          "path": ["api", "documents", "{{document_id}}", "status", ""]
+        },
+        "description": "Lightweight polling endpoint. `status` is one of `pending`, `processing`, `completed`, `failed`; `error_message` is populated when processing fails."
+      },
+      "response": [
+        {
+          "name": "200 OK",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/documents/{{document_id}}/status/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "documents", "{{document_id}}", "status", ""]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [{ "key": "Content-Type", "value": "application/json" }],
+          "body": "{\n  \"id\": \"3f1c2e8a-5b4d-4a7e-9c11-8d2f6b0a9e34\",\n  \"filename\": \"document.pdf\",\n  \"status\": \"processing\",\n  \"error_message\": null\n}"
+        },
+        {
+          "name": "404 Not Found",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/documents/00000000-0000-0000-0000-000000000000/status/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "documents", "00000000-0000-0000-0000-000000000000", "status", ""]
+            }
+          },
+          "status": "Not Found",
+          "code": 404,
+          "header": [{ "key": "Content-Type", "value": "application/json" }],
+          "body": "{\n  \"error\": \"Document not found\"\n}"
+        }
+      ]
+    }
+  ]
+}
