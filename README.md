@@ -54,8 +54,8 @@ dtplabs/
 ### Prerequisites
 
 - Python 3.8+
-- Redis (for Celery)
-- OpenRouter API key (free tier available)
+- An OpenRouter API key (free — see step 4)
+- Redis (optional, only for Celery background processing)
 
 ### Installation
 
@@ -78,29 +78,48 @@ pip install -r requirements.txt
 
 4. Set up environment variables:
 ```bash
-cp .env.example .env
-# Edit .env with your settings
+cp .env.example .env      # Windows: copy .env.example .env
 ```
+
+**Then open `.env` and set `OPENROUTER_API_KEY` — this is the only value you must
+provide; every other variable already has a working default.**
+
+To get a key: sign up at [openrouter.ai](https://openrouter.ai) → **Keys** →
+**Create Key** → copy the `sk-or-v1-...` value into `.env`:
+
+```env
+OPENROUTER_API_KEY=sk-or-v1-your-key-here
+```
+
+No card is required. The default model (`openai/gpt-oss-20b:free`) is free, and
+`GET /api/models/free/` lists every other free model you can pass as `model`.
 
 5. Run migrations:
 ```bash
 python manage.py migrate
 ```
 
-6. Start Redis server:
-```bash
-redis-server
-```
-
-7. Start Celery worker:
-```bash
-celery -A config worker -l info
-```
-
-8. Run development server:
+6. Run development server:
 ```bash
 python manage.py runserver
 ```
+
+Open http://localhost:8000/ and upload a file — that is enough to see the full
+flow. Uploads are processed synchronously when Redis is not running.
+
+### Optional: background processing with Celery
+
+Uploads work without this. Start these two in separate terminals to process
+documents asynchronously instead:
+
+```bash
+redis-server                        # terminal 2
+celery -A config worker -l info     # terminal 3
+```
+
+With the worker running, `POST /api/documents/upload/` returns `pending`
+immediately and the work happens in the background — poll
+`GET /api/documents/{id}/status/` until it reports `completed` or `failed`.
 
 ## Environment Variables
 
