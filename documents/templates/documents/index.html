@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Document Summarizer</title>
+  <style>
+    :root { --bg:#0f1115; --card:#181b22; --line:#272b35; --fg:#e6e8ee; --muted:#8b91a1; --accent:#6d8cff; --ok:#39c07f; --err:#f2666b; }
+    * { box-sizing:border-box }
+    body { margin:0; padding:2rem 1rem; background:var(--bg); color:var(--fg);
+           font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif }
+    .wrap { max-width:760px; margin:0 auto }
+    h1 { font-size:1.4rem; margin:0 0 .25rem }
+    p.sub { color:var(--muted); margin:0 0 1.75rem }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:10px;
+            padding:1.25rem; margin-bottom:1.25rem }
+    label { display:block; font-size:.8rem; text-transform:uppercase; letter-spacing:.05em;
+            color:var(--muted); margin-bottom:.4rem }
+    input, select { width:100%; padding:.6rem .7rem; margin-bottom:1rem; background:#0f1218;
+                    color:var(--fg); border:1px solid var(--line); border-radius:6px; font:inherit }
+    button { padding:.65rem 1.4rem; background:var(--accent); color:#fff; border:0;
+             border-radius:6px; font:inherit; font-weight:600; cursor:pointer }
+    button:disabled { opacity:.5; cursor:not-allowed }
+    .hide { display:none }
+    .badge { display:inline-block; padding:.15rem .55rem; border-radius:999px;
+             font-size:.75rem; font-weight:600; text-transform:uppercase }
+    .pending, .processing { background:#3a3320; color:#e0b341 }
+    .completed { background:#16362a; color:var(--ok) }
+    .failed { background:#3a1f21; color:var(--err) }
+    .meta { color:var(--muted); font-size:.85rem; margin:.6rem 0 1rem }
+    h2 { font-size:1.05rem; margin:0 0 .5rem }
+    .kw { display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.75rem }
+    .kw span { background:#22262f; border:1px solid var(--line); border-radius:5px;
+               padding:.2rem .5rem; font-size:.8rem }
+    .error { color:var(--err) }
+    pre { white-space:pre-wrap; word-break:break-word; margin:0 }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Document Summarizer</h1>
+  <p class="sub">Upload a PDF, DOCX or TXT file &mdash; text is extracted and summarized by an LLM.</p>
+
+  <div class="card">
+    <form id="form">
+      <label for="file">File (max {{ max_upload_mb }}MB)</label>
+      <input type="file" id="file" accept=".pdf,.docx,.txt" required>
+
+      <label for="model">Model</label>
+      <select id="model">
+        <option value="">Default &mdash; {{ default_model }}</option>
+      </select>
+
+      <button type="submit" id="btn">Summarize</button>
+    </form>
+    <p id="formError" class="error hide"></p>
+  </div>
+
+  <div class="card hide" id="result">
+    <span class="badge" id="status"></span>
+    <div class="meta" id="meta"></div>
+    <div id="summaryBox" class="hide">
+      <h2 id="title"></h2>
+      <pre id="summary"></pre>
+      <div class="kw" id="keywords"></div>
+    </div>
+    <p id="errorMsg" class="error hide"></p>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let timer = null;
+
+// Populate the model dropdown from the live /api/models/free/ endpoint.
+fetch('/api/models/free/')
+  .then(r => r.ok ? r.json() : null)
+  .then(d => (d ? d.free_models : []).forEach(m => {
+    const o = document.createElement('option');
+    o.value = m.id; o.textContent = m.name || m.id;
+    $('model').appendChild(o);
+  }))
+  .catch(() => {});   // dropdown just stays on "Default" if OpenRouter is unreachable
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  clearInterval(timer);
+  $('formError').classList.add('hide');
+  $('result').classList.add('hide');
+  $('btn').disabled = true;
+  $('btn').textContent = 'Uploading…';
+
+  const fd = new FormData();
+  fd.append('file', $('file').files[0]);
+  if ($('model').value) fd.append('model', $('model').value);
+
+  try {
+    const res = await fetch('/api/documents/upload/', { method: 'POST', body: fd });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.message || body.error || 'Upload failed');
+    render(body);
+    // Celery runs the work in the background, so poll until it settles.
+    if (body.status === 'pending' || body.status === 'processing') poll(body.document_id);
+    else finish(body.document_id);
+  } catch (err) {
+    $('formError').textContent = err.message;
+    $('formError').classList.remove('hide');
+    reset();
+  }
+});
+
+function poll(id) {
+  timer = setInterval(async () => {
+    const d = await (await fetch(`/api/documents/${id}/status/`)).json();
+    render(d);
+    if (d.status === 'completed' || d.status === 'failed') { clearInterval(timer); finish(id); }
+  }, 2000);
+}
+
+async function finish(id) {
+  const d = await (await fetch(`/api/documents/${id}/`)).json();
+  render(d);
+  if (d.llm_response) {
+    $('title').textContent = d.llm_response.title || '(no title)';
+    $('summary').textContent = d.llm_response.summary || '';
+    $('keywords').innerHTML = (d.llm_response.keywords || [])
+      .map(k => `<span>${k}</span>`).join('');
+    $('meta').textContent = [
+      d.filename,
+      d.llm_response.language,
+      `${d.llm_response.word_count} words`,
+      `${Number(d.llm_response.processing_time).toFixed(1)}s`,
+      d.model_used,
+    ].filter(Boolean).join('  ·  ');
+    $('summaryBox').classList.remove('hide');
+  }
+  reset();
+}
+
+function render(d) {
+  $('result').classList.remove('hide');
+  $('status').textContent = d.status;
+  $('status').className = 'badge ' + d.status;
+  if (!$('meta').textContent) $('meta').textContent = d.filename || '';
+  if (d.error_message) {
+    $('errorMsg').textContent = d.error_message;
+    $('errorMsg').classList.remove('hide');
+  } else {
+    $('errorMsg').classList.add('hide');
+  }
+}
+
+function reset() { $('btn').disabled = false; $('btn').textContent = 'Summarize'; }
+</script>
+</body>
+</html>
