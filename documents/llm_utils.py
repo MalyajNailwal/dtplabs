@@ -2,6 +2,8 @@ import json
 import requests
 from django.conf import settings
 
+from .prompts import build_summary_messages
+
 
 OPENROUTER_API_KEY = settings.OPENROUTER_API_KEY
 OPENROUTER_BASE_URL = settings.OPENROUTER_BASE_URL
@@ -43,22 +45,6 @@ def call_llm(text, model=None):
     if not OPENROUTER_API_KEY:
         raise ValueError("OPENROUTER_API_KEY is not configured")
     
-    prompt = f"""Analyze the following document and provide a structured JSON response.
-
-Document text:
-{text[:8000]}
-
-Provide your response in the following JSON format ONLY:
-{{
-    "title": "A concise title for the document",
-    "summary": "A comprehensive summary of the document (2-3 paragraphs)",
-    "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
-    "language": "The primary language of the document",
-    "word_count": {len(text.split())}
-}}
-
-Important: Return ONLY the JSON object, no additional text or markdown formatting."""
-    
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
@@ -68,10 +54,8 @@ Important: Return ONLY the JSON object, no additional text or markdown formattin
     
     data = {
         "model": model,
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.3,
+        "messages": build_summary_messages(text),
+        "temperature": settings.LLM_TEMPERATURE,
         "max_tokens": settings.LLM_MAX_TOKENS,
         # Reasoning models (gpt-oss, nemotron, ...) otherwise spend the whole
         # token budget on hidden reasoning and return an empty/truncated answer.

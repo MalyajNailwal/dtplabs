@@ -23,6 +23,9 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # Outermost so the logged duration covers the whole request, including the
+    # work done by the middleware below it.
+    'documents.middleware.RequestLoggingMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -90,6 +93,8 @@ REST_FRAMEWORK = {
 }
 
 # Logging
+LOG_LEVEL = config('LOG_LEVEL', default='INFO')
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -108,8 +113,16 @@ LOGGING = {
     'loggers': {
         'documents': {
             'handlers': ['console'],
-            'level': 'INFO',
-            'propagate': True,
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        # Request/response lines from documents.middleware. Split out so API
+        # traffic can be silenced (or made verbose) independently of the
+        # application logs above.
+        'documents.requests': {
+            'handlers': ['console'],
+            'level': LOG_LEVEL,
+            'propagate': False,
         },
     },
 }
@@ -126,6 +139,12 @@ LLM_MAX_TOKENS = config('LLM_MAX_TOKENS', default=2000, cast=int)
 # 'low' | 'medium' | 'high' - keeps reasoning models from burning the whole
 # token budget on hidden reasoning instead of the answer.
 LLM_REASONING_EFFORT = config('LLM_REASONING_EFFORT', default='low')
+# Low temperature keeps the JSON structure stable; templates live in
+# documents/prompts.py.
+LLM_TEMPERATURE = config('LLM_TEMPERATURE', default=0.3, cast=float)
+# Characters of document text sent to the model - keeps long documents inside
+# the context window.
+PROMPT_MAX_CHARS = config('PROMPT_MAX_CHARS', default=8000, cast=int)
 
 # Celery
 CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/0')
